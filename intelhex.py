@@ -14,6 +14,8 @@ class RecordStructure(IntEnum):
     CHECKSUM = -2
 
 
+# TODO: handling of extended/linear record based on intel hex
+
 class IntelHex(Format):
     RECORD_IDENTIFIER = {
         '00': 'DATA_RECORD',
@@ -50,6 +52,7 @@ class IntelHex(Format):
         Verify the checksum of a given record.
         Two's complement of the least significant byte (LSB) of the sum of
         all decoded byte values in the record preceding the checksum.
+
         :param record: record to be verified
         :return: True is checksum verified, False otherwise
         """
@@ -192,12 +195,12 @@ class IntelHex(Format):
         if self.start_address != '':
             raise FileCorruptedError('More than one start address found')
 
-        self.start_address = self.data
+        self.start_address = (int(self.data[:4], 16) << 4) + int(self.data[4:], 16)
 
         # make empty data segment to hold start address
         self.segments.append(
             Segment(
-                address=self.start_address,
+                address=f'{self.start_address:08X}',
                 data=''
             )
         )
@@ -252,11 +255,104 @@ class IntelHex(Format):
             )
         )
 
-    def _add_segment_record(self):
-        pass
+    @staticmethod
+    def _calculate_checksum(record: str) -> str:
+        # initialize checksum
+        _checksum: int = 0
+
+        # calculate checksum of record bytes
+        for i in range(0, len(record), 2):
+            _checksum += int(record[i:i + 2], 16)
+
+        _checksum = _checksum & 0xFF
+
+        # calculate two's complement (modulo 256)
+        _checksum = ((_checksum ^ 0xFF) + 1) & 0xFF
+
+        return f'{_checksum:02X}'
+
+    def _compose_data_record(self, data: str):
+        _data_length = len(data) // 2
+
+        # create the record except checksum
+        _record_bytes = f'{_data_length:02X}{self.lower_address:04X}00{data}'
+        self.lower_address += _data_length
+
+        # calculate the checksum
+        _checksum_byte = self._calculate_checksum(_record_bytes)
+
+        # append the record
+        self.lines.append(f'{self.start_code}{_record_bytes}{_checksum_byte}{self.line_termination}')
 
     def _compose_end_of_file_record(self):
-        self.lines.append(f'{self.start_code}00000001FF')
+        # create the record except checksum
+        _record_bytes = f'00000001'
+
+        # calculate the checksum
+        _checksum_byte = self._calculate_checksum(_record_bytes)
+
+        # append the record
+        self.lines.append(f'{self.start_code}{_record_bytes}{_checksum_byte}')
+
+    def _compose_extended_segment_address_record(self, address: str):
+        # create the record except checksum
+        _record_bytes = f'02000002{address}'
+
+        # calculate the checksum
+        _checksum_byte = self._calculate_checksum(_record_bytes)
+
+        # append the record
+        self.lines.append(f'{self.start_code}{_record_bytes}{_checksum_byte}{self.line_termination}')
+
+    def _compose_start_segment_address_record(self, address: str):
+        # create the record except checksum
+        _record_bytes = f'04000003{address}'
+
+        # calculate the checksum
+        _checksum_byte = self._calculate_checksum(_record_bytes)
+
+        # append the record
+        self.lines.append(f'{self.start_code}{_record_bytes}{_checksum_byte}{self.line_termination}')
+
+    def _compose_extended_linear_address_record(self, address: str):
+        # create the record except checksum
+        _record_bytes = f'02000004{address}'
+
+        # calculate the checksum
+        _checksum_byte = self._calculate_checksum(_record_bytes)
+
+        # append the record
+        self.lines.append(f'{self.start_code}{_record_bytes}{_checksum_byte}{self.line_termination}')
+
+    def _compose_start_linear_address_record(self, address: str):
+        # create the record except checksum
+        _record_bytes = f'04000005{address}'
+
+        # calculate the checksum
+        _checksum_byte = self._calculate_checksum(_record_bytes)
+
+        # append the record
+        self.lines.append(f'{self.start_code}{_record_bytes}{_checksum_byte}{self.line_termination}')
+
+    def _compose_segment(self, segment: Segment):
+        if segment.data == '':
+            # add start linear address record
+            self._compose_start_linear_address_record(segment.address)
+        else:
+            address = int(segment.address, 16)
+            self.lower_address = address & 0xFFFF
+            address = address >> 16
+
+            # add extended linear address record
+            self._compose_extended_linear_address_record(f'{address:04X}')
+
+            # add data record of 16 bytes data
+            i = 0
+            _data = segment.data
+            while i < len(_data):
+                # add data record
+                self._compose_data_record(_data[i:i + 32])
+                i += 32
 
     def parse(self) -> list[Segment]:
         with open(self.file_path) as hex_file:
@@ -290,7 +386,7 @@ class IntelHex(Format):
     def compose(self) -> list[str]:
         # parse and convert segments
         for segment in self.segments:
-            print(f'Compose Segment {segment}')
+            self._compose_segment(segment)
 
         # add end of file record
         self._compose_end_of_file_record()
@@ -311,7 +407,7 @@ if __name__ == '__main__':
     print(_segments)
 
     intel = IntelHex(
-        file_path=r'sample_files\sample_hex_file_del.hex',
+        file_path=r'sample_files\del_sample_hex_file.hex',
         segments=_segments
     )
     intel.compose()
@@ -323,19 +419,19 @@ if __name__ == '__main__':
     print(_segments)
 
     intel = IntelHex(
-        file_path=r'sample_files\sample_hex_file_2_del.hex',
+        file_path=r'sample_files\del_sample_hex_file_2.hex',
         segments=_segments
     )
     intel.compose()
 
-    # intel = IntelHex(
-    #     file_path=r'sample_files\sample_empty_hex_file.hex'
-    # )
-    # _segments = intel.parse()
-    # print(_segments)
-    #
-    # intel = IntelHex(
-    #     file_path=r'sample_files\sample_empty_hex_file_del.hex',
-    #     segments=_segments
-    # )
-    # intel.convert()
+    intel = IntelHex(
+        file_path=r'sample_files\sample_empty_hex_file.hex'
+    )
+    _segments = intel.parse()
+    print(_segments)
+
+    intel = IntelHex(
+        file_path=r'sample_files\del_sample_empty_hex_file.hex',
+        segments=_segments
+    )
+    intel.compose()
