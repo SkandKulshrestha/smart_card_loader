@@ -18,5 +18,5 @@ class Format:
     def parse(self):
         raise NotImplementedError('Provide the definition of parse method')
 
-    def convert(self) -> list[str]:
-        raise NotImplementedError('Provide the definition of parse method')
+    def compose(self) -> list[str]:
+        raise NotImplementedError('Provide the definition of compose method')

@@ -48,7 +48,7 @@ class SmartCard(Format):
     def parse(self):
         pass
 
-    def convert(self) -> list[str]:
+    def compose(self) -> list[str]:
         # parse and convert segments
         for segment in self.segments:
             self.set_high_address(segment.address[:4])
@@ -72,4 +72,4 @@ if __name__ == '__main__':
             Segment(address='10000000', data='030405')
         ]
     )
-    smart_card.convert()
+    smart_card.compose()
