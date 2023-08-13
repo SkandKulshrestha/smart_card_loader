@@ -35,9 +35,11 @@ class IntelHex(Format):
         self.checksum: str = ''
 
         # segment structure
-        self.segment_address: str = ''
+        self.segment_address: int = 0
         self.segment_data: str = ''
         self.lower_address: int = 0
+        self.data_collected: int = 0
+        self.start_address: str = ''
 
         # file state
         self.end_of_file_reached: bool = False
@@ -96,22 +98,34 @@ class IntelHex(Format):
         # parse record fields
         self._parse(record)
 
-        # handle data record starts without extended address record
-        if self.segment_address == '':
-            self.segment_address = '0000'
+        record_address: int = int(self.address, 16)
 
         # append lower 16 bits of 32 bits address from first data record
         if self.segment_data == '':
-            self.segment_address += self.address
-            self.lower_address = int(self.address, 16)
+            self.lower_address = record_address
 
         # check next address
-        if self.lower_address == int(self.address, 16):
-            # accumulate the data to same segment
+        if record_address + self.record_length == self.lower_address:
+            # prepend the data to same segment
+            self.segment_data = self.data + self.segment_data
+            self.lower_address = record_address
+            self.data_collected += self.record_length
+
+        elif self.lower_address + self.data_collected == record_address:
+            # append the data to same segment
             self.segment_data += self.data
-            self.lower_address += self.record_length
-        else:
+            self.data_collected += self.record_length
+
+        elif record_address + self.record_length < self.lower_address:
+            # TODO: holes are to be handled
             raise NotImplementedError('TODO: Yet to be implemented')
+
+        elif self.lower_address + self.data_collected < record_address:
+            # TODO: holes are to be handled
+            raise NotImplementedError('TODO: Yet to be implemented')
+
+        else:
+            raise FileCorruptedError('More than one data is stored on same address')
 
     def _parse_end_of_file_record(self, record: str):
         """
@@ -123,16 +137,16 @@ class IntelHex(Format):
         self._parse(record)
 
         # store previous parsed data segment
-        if self.segment_address != '':
+        if self.segment_data != '':
             self.segments.append(
                 Segment(
-                    address=self.segment_address,
+                    address=f'{self.segment_address + self.lower_address:08X}',
                     data=self.segment_data
                 )
             )
 
         # re-initialize the segment data accumulation
-        self.segment_address = ''
+        self.segment_address = 0
         self.segment_data = ''
 
         # mark end of record
@@ -150,6 +164,19 @@ class IntelHex(Format):
         if self.record_length != 2:
             raise FileCorruptedError('Record length must be 2 bytes')
 
+        # store previous parsed data segment
+        if self.segment_data != '':
+            self.segments.append(
+                Segment(
+                    address=f'{self.segment_address + self.lower_address:08X}',
+                    data=self.segment_data
+                )
+            )
+
+        # re-initialize the segment data accumulation
+        self.segment_address = int(self.data, 16) << 8
+        self.segment_data = ''
+
     def _parse_start_segment_address_record(self, record: str):
         """
         Parse the start segment address record
@@ -161,6 +188,19 @@ class IntelHex(Format):
 
         if self.record_length != 4:
             raise FileCorruptedError('Record length must be 4 bytes')
+
+        if self.start_address != '':
+            raise FileCorruptedError('More than one start address found')
+
+        self.start_address = self.data
+
+        # make empty data segment to hold start address
+        self.segments.append(
+            Segment(
+                address=self.start_address,
+                data=''
+            )
+        )
 
     def _parse_extended_linear_address_record(self, record: str):
         """
@@ -175,16 +215,16 @@ class IntelHex(Format):
             raise FileCorruptedError('Record length must be 2 bytes')
 
         # store previous parsed data segment
-        if self.segment_address != '':
+        if self.segment_data != '':
             self.segments.append(
                 Segment(
-                    address=self.segment_address,
+                    address=f'{self.segment_address + self.lower_address:08X}',
                     data=self.segment_data
                 )
             )
 
         # re-initialize the segment data accumulation
-        self.segment_address = self.data
+        self.segment_address = int(self.data, 16) << 16
         self.segment_data = ''
 
     def _parse_start_linear_address_record(self, record: str):
@@ -198,6 +238,19 @@ class IntelHex(Format):
 
         if self.record_length != 4:
             raise FileCorruptedError('Record length must be 4 bytes')
+
+        if self.start_address != '':
+            raise FileCorruptedError('More than one start address found')
+
+        self.start_address = self.data
+
+        # make empty data segment to hold start address
+        self.segments.append(
+            Segment(
+                address=self.start_address,
+                data=''
+            )
+        )
 
     def _add_segment_record(self):
         pass
@@ -237,7 +290,7 @@ class IntelHex(Format):
     def compose(self) -> list[str]:
         # parse and convert segments
         for segment in self.segments:
-            print(f'Parse segment {segment}')
+            print(f'Compose Segment {segment}')
 
         # add end of file record
         self._compose_end_of_file_record()
@@ -259,6 +312,18 @@ if __name__ == '__main__':
 
     intel = IntelHex(
         file_path=r'sample_files\sample_hex_file_del.hex',
+        segments=_segments
+    )
+    intel.compose()
+
+    intel = IntelHex(
+        file_path=r'sample_files\sample_hex_file_2.hex'
+    )
+    _segments = intel.parse()
+    print(_segments)
+
+    intel = IntelHex(
+        file_path=r'sample_files\sample_hex_file_2_del.hex',
         segments=_segments
     )
     intel.compose()
