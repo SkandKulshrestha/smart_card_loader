@@ -26,6 +26,9 @@ class IntelHex(Format):
         '05': 'START_LINEAR_ADDRESS_RECORD'
     }
 
+    # store max 16 bytes in a single record
+    MAX_DATA_LENGTH: int = 32
+
     def __init__(self, line_termination: str = '\n', file_path: str = None, segments: list[Segment] = None):
         super(IntelHex, self).__init__(line_termination, file_path, segments)
 
@@ -339,20 +342,20 @@ class IntelHex(Format):
             # add start linear address record
             self._compose_start_linear_address_record(segment.address)
         else:
-            address = int(segment.address, 16)
+            address: int = int(segment.address, 16)
             self.lower_address = address & 0xFFFF
             address = address >> 16
 
             # add extended linear address record
             self._compose_extended_linear_address_record(f'{address:04X}')
 
-            # add data record of 16 bytes data
+            # add data records of fixed length, followed by rest data
             i = 0
             _data = segment.data
             while i < len(_data):
                 # add data record
-                self._compose_data_record(_data[i:i + 32])
-                i += 32
+                self._compose_data_record(_data[i:i + self.MAX_DATA_LENGTH])
+                i += self.MAX_DATA_LENGTH
 
     def parse(self) -> list[Segment]:
         with open(self.file_path) as hex_file:
