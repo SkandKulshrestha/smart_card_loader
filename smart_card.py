@@ -265,6 +265,13 @@ class SmartCard(Format):
                 self._compose_write_command(_data[i:i + self.MAX_DATA_LENGTH])
                 i += self.MAX_DATA_LENGTH
 
+    def _append_pre_script(self):
+        self.lines.append(f'.reset{self.line_termination}')
+
+    def _append_post_script(self):
+        self.lines.append(f'.reset{self.line_termination}')
+        self.lines.append(f'.end{self.line_termination}')
+
     def parse(self) -> list[Segment]:
         with open(self.file_path) as hex_file:
             self.lines = hex_file.read().split(self.line_termination)
@@ -313,9 +320,15 @@ class SmartCard(Format):
         return self.segments
 
     def compose(self) -> list[str]:
+        # append pre-script content
+        self._append_pre_script()
+
         # parse and convert segments
         for segment in self.segments:
             self._compose_segment(segment)
+
+        # append post-script content
+        self._append_post_script()
 
         # write lines if file path is given
         if self.file_path:
