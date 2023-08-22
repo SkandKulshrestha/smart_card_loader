@@ -1,4 +1,5 @@
 from enum import IntEnum
+from typing import List
 
 from format import Format
 from format import FileCorruptedError
@@ -6,9 +7,9 @@ from segment import Segment
 
 
 class AddressType(IntEnum):
-    ADDRESS_16_BIT = 16,    # S-19 style
-    ADDRESS_24_BIT = 24,    # S-28 style
-    ADDRESS_32_BIT = 32     # S-37 style
+    ADDRESS_16_BIT = 16,  # S-19 style
+    ADDRESS_24_BIT = 24,  # S-28 style
+    ADDRESS_32_BIT = 32  # S-37 style
 
 
 class SRecordStructure(IntEnum):
@@ -31,7 +32,7 @@ class MotorolaSRecord(Format):
     # store max 16 bytes in a single record
     MAX_DATA_LENGTH: int = 32
 
-    def __init__(self, line_termination: str = '\n', file_path: str = None, segments: list[Segment] = None):
+    def __init__(self, line_termination: str = '\n', file_path: str = None, segments: List[Segment] = None):
         super(MotorolaSRecord, self).__init__(line_termination, file_path, segments)
 
         # record structure
@@ -359,7 +360,7 @@ class MotorolaSRecord(Format):
                 self._compose_data_record(_data[i:i + self.MAX_DATA_LENGTH])
                 i += self.MAX_DATA_LENGTH
 
-    def parse(self) -> list[Segment]:
+    def parse(self) -> List[Segment]:
         with open(self.file_path) as hex_file:
             self.lines = hex_file.read().split(self.line_termination)
 
@@ -388,7 +389,7 @@ class MotorolaSRecord(Format):
                 FileCorruptedError('Record contains unknown symbol')
         return self.segments
 
-    def compose(self) -> list[str]:
+    def compose(self) -> List[str]:
         # parse and convert segments
         for segment in self.segments:
             self._compose_segment(segment)
@@ -403,6 +404,12 @@ class MotorolaSRecord(Format):
 
         return self.lines
 
+    def verify(self) -> bool:
+        raise NotImplementedError('Coming soon...')
+
+    def merge(self, file_path: str, segments: List[Segment] = None):
+        raise NotImplementedError('Coming soon...')
+
 
 if __name__ == '__main__':
     motorola_s_record = MotorolaSRecord(
@@ -416,4 +423,3 @@ if __name__ == '__main__':
     #     segments=_segments
     # )
     # motorola_s_record.compose()
-

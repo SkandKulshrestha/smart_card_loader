@@ -1,4 +1,5 @@
 from enum import IntEnum
+from typing import List
 
 from format import Format
 from format import FileCorruptedError
@@ -27,10 +28,13 @@ class IntelHex(Format):
     }
 
     # store max 16 bytes in a single record
-    MAX_DATA_LENGTH: int = 32
+    MAX_DATA_LENGTH: int = 16 * 2  # 2 characters for each byte
 
-    def __init__(self, line_termination: str = '\n', file_path: str = None, segments: list[Segment] = None):
+    def __init__(self, line_termination: str = '\n', file_path: str = None, segments: List[Segment] = None):
         super(IntelHex, self).__init__(line_termination, file_path, segments)
+
+        # record identifier
+        self.record_identifier = {v: k for k, v in self.RECORD_IDENTIFIER.items()}
 
         # record structure
         self.start_code: str = ':'
@@ -48,6 +52,13 @@ class IntelHex(Format):
 
         # file state
         self.end_of_file_reached: bool = False
+
+    def _update_segment_info(self, segment_address: int = 0, segment_data: str = '',
+                             lower_address: int = 0, data_collected: int = 0):
+        self.segment_address = segment_address
+        self.segment_data = segment_data
+        self.lower_address = lower_address
+        self.data_collected = data_collected
 
     @staticmethod
     def _verify_checksum(record: str) -> bool:
@@ -151,9 +162,8 @@ class IntelHex(Format):
                 )
             )
 
-        # re-initialize the segment data accumulation
-        self.segment_address = 0
-        self.segment_data = ''
+        # reset the segment data info
+        self._update_segment_info()
 
         # mark end of record
         self.end_of_file_reached = True
@@ -179,9 +189,8 @@ class IntelHex(Format):
                 )
             )
 
-        # re-initialize the segment data accumulation
-        self.segment_address = int(self.data, 16) << 8
-        self.segment_data = ''
+        # update the segment data info
+        self._update_segment_info(segment_address=int(self.data, 16) << 8)
 
     def _parse_start_segment_address_record(self, record: str):
         """
@@ -196,6 +205,9 @@ class IntelHex(Format):
             raise FileCorruptedError('Record length must be 4 bytes')
 
         if self.start_address != '':
+            if self.start_address == self.data:
+                return
+
             raise FileCorruptedError('More than one start address found')
 
         self.start_address = (int(self.data[:4], 16) << 4) + int(self.data[4:], 16)
@@ -229,9 +241,8 @@ class IntelHex(Format):
                 )
             )
 
-        # re-initialize the segment data accumulation
-        self.segment_address = int(self.data, 16) << 16
-        self.segment_data = ''
+        # update the segment data info
+        self._update_segment_info(segment_address=int(self.data, 16) << 16)
 
     def _parse_start_linear_address_record(self, record: str):
         """
@@ -246,6 +257,9 @@ class IntelHex(Format):
             raise FileCorruptedError('Record length must be 4 bytes')
 
         if self.start_address != '':
+            if self.start_address == self.data:
+                return
+
             raise FileCorruptedError('More than one start address found')
 
         self.start_address = self.data
@@ -278,7 +292,7 @@ class IntelHex(Format):
         _data_length = len(data) // 2
 
         # create the record except checksum
-        _record_bytes = f'{_data_length:02X}{self.lower_address:04X}00{data}'
+        _record_bytes = f'{_data_length:02X}{self.lower_address:04X}{self.record_identifier["DATA_RECORD"]}{data}'
         self.lower_address += _data_length
 
         # calculate the checksum
@@ -289,7 +303,7 @@ class IntelHex(Format):
 
     def _compose_end_of_file_record(self):
         # create the record except checksum
-        _record_bytes = f'00000001'
+        _record_bytes = f'000000{self.record_identifier["END_OF_FILE_RECORD"]}'
 
         # calculate the checksum
         _checksum_byte = self._calculate_checksum(_record_bytes)
@@ -299,7 +313,7 @@ class IntelHex(Format):
 
     def _compose_extended_segment_address_record(self, address: str):
         # create the record except checksum
-        _record_bytes = f'02000002{address}'
+        _record_bytes = f'020000{self.record_identifier["EXTENDED_SEGMENT_ADDRESS_RECORD"]}{address}'
 
         # calculate the checksum
         _checksum_byte = self._calculate_checksum(_record_bytes)
@@ -309,7 +323,7 @@ class IntelHex(Format):
 
     def _compose_start_segment_address_record(self, address: str):
         # create the record except checksum
-        _record_bytes = f'04000003{address}'
+        _record_bytes = f'040000{self.record_identifier["START_SEGMENT_ADDRESS_RECORD"]}{address}'
 
         # calculate the checksum
         _checksum_byte = self._calculate_checksum(_record_bytes)
@@ -319,7 +333,7 @@ class IntelHex(Format):
 
     def _compose_extended_linear_address_record(self, address: str):
         # create the record except checksum
-        _record_bytes = f'02000004{address}'
+        _record_bytes = f'020000{self.record_identifier["EXTENDED_LINEAR_ADDRESS_RECORD"]}{address}'
 
         # calculate the checksum
         _checksum_byte = self._calculate_checksum(_record_bytes)
@@ -329,7 +343,7 @@ class IntelHex(Format):
 
     def _compose_start_linear_address_record(self, address: str):
         # create the record except checksum
-        _record_bytes = f'04000005{address}'
+        _record_bytes = f'040000{self.record_identifier["START_LINEAR_ADDRESS_RECORD"]}{address}'
 
         # calculate the checksum
         _checksum_byte = self._calculate_checksum(_record_bytes)
@@ -357,7 +371,7 @@ class IntelHex(Format):
                 self._compose_data_record(_data[i:i + self.MAX_DATA_LENGTH])
                 i += self.MAX_DATA_LENGTH
 
-    def parse(self) -> list[Segment]:
+    def parse(self) -> List[Segment]:
         with open(self.file_path) as hex_file:
             self.lines = hex_file.read().split(self.line_termination)
 
@@ -384,15 +398,22 @@ class IntelHex(Format):
                 FileCorruptedError('Record parsing not defined')
             except ValueError:
                 FileCorruptedError('Record contains unknown symbol')
+
+        if not self.end_of_file_reached:
+            FileCorruptedError('Record contains unknown symbol')
+
         return self.segments
 
-    def compose(self) -> list[str]:
-        # parse and convert segments
-        for segment in self.segments:
-            self._compose_segment(segment)
+    def compose(self) -> List[str]:
+        try:
+            # parse and convert segments
+            for segment in self.segments:
+                self._compose_segment(segment)
 
-        # add end of file record
-        self._compose_end_of_file_record()
+            # add end of file record
+            self._compose_end_of_file_record()
+        except KeyError:
+            FileCorruptedError('Record identifier does not exist')
 
         # write lines if file path is given
         if self.file_path:
@@ -400,6 +421,12 @@ class IntelHex(Format):
                 file.writelines(self.lines)
 
         return self.lines
+
+    def verify(self) -> bool:
+        raise NotImplementedError('Coming soon...')
+
+    def merge(self, file_path: str, segments: List[Segment] = None):
+        raise NotImplementedError('Coming soon...')
 
 
 if __name__ == '__main__':

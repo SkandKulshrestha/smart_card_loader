@@ -1,4 +1,5 @@
 from enum import IntEnum
+from typing import List
 
 from format import Format
 from segment import Segment
@@ -25,7 +26,7 @@ class SmartCard(Format):
     # store max 16 bytes in a single command
     MAX_DATA_LENGTH: int = 32
 
-    def __init__(self, line_termination: str = '\n', file_path: str = None, segments: list[Segment] = None):
+    def __init__(self, line_termination: str = '\n', file_path: str = None, segments: List[Segment] = None):
         super(SmartCard, self).__init__(line_termination, file_path, segments)
 
         # command structure
@@ -272,7 +273,7 @@ class SmartCard(Format):
         self.lines.append(f'.reset{self.line_termination}')
         self.lines.append(f'.end{self.line_termination}')
 
-    def parse(self) -> list[Segment]:
+    def parse(self) -> List[Segment]:
         with open(self.file_path) as hex_file:
             self.lines = hex_file.read().split(self.line_termination)
 
@@ -319,7 +320,7 @@ class SmartCard(Format):
 
         return self.segments
 
-    def compose(self) -> list[str]:
+    def compose(self) -> List[str]:
         # append pre-script content
         self._append_pre_script()
 
@@ -336,6 +337,12 @@ class SmartCard(Format):
                 file.writelines(self.lines)
 
         return self.lines
+
+    def verify(self) -> bool:
+        raise NotImplementedError('Coming soon...')
+
+    def merge(self, file_path: str, segments: List[Segment] = None):
+        raise NotImplementedError('Coming soon...')
 
 
 if __name__ == '__main__':
