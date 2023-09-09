@@ -8,23 +8,31 @@ class FileCorruptedError(BaseException):
 
 
 class Format(ABC):
-    def __init__(self, line_termination: str, file_path: str, segments: List[Segment] = None):
+    def __init__(self, line_termination: str):
         self.line_termination: str = line_termination
-        self.file_path: str = file_path
-        if segments is None:
-            self.segments: List[Segment] = list()
-        else:
-            self.segments: List[Segment] = segments
+
+        # initialize the segment list and lines list
+        self.segments: List[Segment] = list()
         self.lines: List[str] = list()
 
-    def parse(self) -> List[Segment]:
+        # initialize operation state
+        self.parsed: bool = False
+        self.composed: bool = False
+
+    def parse(self, file_path: str) -> List[Segment]:
         raise NotImplementedError('Provide the definition of parse method')
 
-    def compose(self) -> List[str]:
+    def compose(self, file_path: str = '', segments: List[Segment] = None) -> List[str]:
         raise NotImplementedError('Provide the definition of compose method')
 
     def verify(self) -> bool:
-        raise NotImplementedError('Provide the definition of verify method')
+        for segment in self.segments:
+            print(segment)
 
-    def merge(self, file_path: str, segments: List[Segment] = None):
-        raise NotImplementedError('Provide the definition of merge method')
+        return True
+
+    def merge(self, output_file: str, file_paths: List[str]):
+        for file_path in file_paths:
+            self.parse(file_path)
+
+        self.compose(output_file)

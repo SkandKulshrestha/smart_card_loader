@@ -360,8 +360,8 @@ class MotorolaSRecord(Format):
                 self._compose_data_record(_data[i:i + self.MAX_DATA_LENGTH])
                 i += self.MAX_DATA_LENGTH
 
-    def parse(self) -> List[Segment]:
-        with open(self.file_path) as hex_file:
+    def parse(self, file_path: str) -> List[Segment]:
+        with open(file_path) as hex_file:
             self.lines = hex_file.read().split(self.line_termination)
 
         # read and parse records
@@ -389,7 +389,7 @@ class MotorolaSRecord(Format):
                 FileCorruptedError('Record contains unknown symbol')
         return self.segments
 
-    def compose(self) -> List[str]:
+    def compose(self, file_path: str = '', segments: List[Segment] = None) -> List[str]:
         # parse and convert segments
         for segment in self.segments:
             self._compose_segment(segment)
@@ -398,17 +398,11 @@ class MotorolaSRecord(Format):
         self._compose_end_of_file_record()
 
         # write lines if file path is given
-        if self.file_path:
-            with open(self.file_path, 'w') as file:
+        if file_path:
+            with open(file_path, 'w') as file:
                 file.writelines(self.lines)
 
         return self.lines
-
-    def verify(self) -> bool:
-        raise NotImplementedError('Coming soon...')
-
-    def merge(self, file_path: str, segments: List[Segment] = None):
-        raise NotImplementedError('Coming soon...')
 
 
 if __name__ == '__main__':

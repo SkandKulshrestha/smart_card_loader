@@ -30,8 +30,8 @@ class IntelHex(Format):
     # store max 16 bytes in a single record
     MAX_DATA_LENGTH: int = 16 * 2  # 2 characters for each byte
 
-    def __init__(self, line_termination: str = '\n', file_path: str = None, segments: List[Segment] = None):
-        super(IntelHex, self).__init__(line_termination, file_path, segments)
+    def __init__(self, line_termination: str = '\n'):
+        super(IntelHex, self).__init__(line_termination)
 
         # record identifier
         self.record_identifier = {v: k for k, v in self.RECORD_IDENTIFIER.items()}
@@ -52,6 +52,7 @@ class IntelHex(Format):
 
         # file state
         self.end_of_file_reached: bool = False
+        self.end_of_file_line_number: int = 0
 
     def _update_segment_info(self, segment_address: int = 0, segment_data: str = '',
                              lower_address: int = 0, data_collected: int = 0):
@@ -371,97 +372,97 @@ class IntelHex(Format):
                 self._compose_data_record(_data[i:i + self.MAX_DATA_LENGTH])
                 i += self.MAX_DATA_LENGTH
 
-    def parse(self) -> List[Segment]:
-        with open(self.file_path) as hex_file:
-            self.lines = hex_file.read().split(self.line_termination)
+    def parse(self, file_path: str) -> List[Segment]:
+        if not self.parsed:
+            # parse the file
+            with open(file_path) as hex_file:
+                lines = hex_file.read().split(self.line_termination)
 
-        # read and parse records
-        for record in self.lines:
-            try:
-                # check start code
-                start_code = record[RecordStructure.START_CODE:RecordStructure.RECORD_LENGTH]
-                if start_code != self.start_code:
-                    raise FileCorruptedError('Start of a record not found')
+            # read and parse records
+            for record in lines:
+                if record:
+                    try:
+                        # check start code
+                        start_code = record[RecordStructure.START_CODE:RecordStructure.RECORD_LENGTH]
+                        if start_code != self.start_code:
+                            raise FileCorruptedError('Start of a record not found')
 
-                # fetch record type
-                record_type = record[RecordStructure.RECORD_TYPE:RecordStructure.DATA]
+                        # fetch record type
+                        record_type = record[RecordStructure.RECORD_TYPE:RecordStructure.DATA]
 
-                # parse the record
-                _parse_record = eval(f'self._parse_{self.RECORD_IDENTIFIER[record_type].lower()}')
-                _parse_record(record)
+                        # parse the record
+                        _parse_record = eval(f'self._parse_{self.RECORD_IDENTIFIER[record_type].lower()}')
+                        _parse_record(record)
+                    except IndexError:
+                        FileCorruptedError('Record contains less bytes')
+                    except KeyError:
+                        FileCorruptedError('Record parsing not defined')
+                    except ValueError:
+                        FileCorruptedError('Record contains unknown symbol')
 
+                # save the line
+                self.lines.append(f'{record}{self.line_termination}')
+
+                # verify end of record reached
                 if self.end_of_file_reached:
                     break
-            except IndexError:
-                FileCorruptedError('Record contains less bytes')
-            except KeyError:
-                FileCorruptedError('Record parsing not defined')
-            except ValueError:
-                FileCorruptedError('Record contains unknown symbol')
 
-        if not self.end_of_file_reached:
-            FileCorruptedError('Record contains unknown symbol')
+            # hex file must contain end of file record
+            if not self.end_of_file_reached:
+                FileCorruptedError('File does not contain end of file record')
+
+            # mark file as parsed
+            self.parsed = True
 
         return self.segments
 
-    def compose(self) -> List[str]:
-        try:
-            # parse and convert segments
-            for segment in self.segments:
-                self._compose_segment(segment)
+    def compose(self, file_path: str = '', segments: List[Segment] = None) -> List[str]:
+        if not self.composed:
+            if self.parsed and segments is not None:
+                # remove end of file record, i.e., only last line
+                self.lines = self.lines[:-1]
+                self.segments.extend(segments)
 
-            # add end of file record
-            self._compose_end_of_file_record()
-        except KeyError:
-            FileCorruptedError('Record identifier does not exist')
+            # compose the file content
+            if segments is not None:
+                try:
+                    # parse and convert segments
+                    for segment in segments:
+                        self._compose_segment(segment)
+
+                    # add end of file record
+                    self._compose_end_of_file_record()
+                except KeyError:
+                    FileCorruptedError('Record identifier does not exist')
+
+            # mark file as composed
+            self.composed = True
 
         # write lines if file path is given
-        if self.file_path:
-            with open(self.file_path, 'w') as file:
+        if file_path:
+            with open(file_path, 'w') as file:
                 file.writelines(self.lines)
 
         return self.lines
 
-    def verify(self) -> bool:
-        raise NotImplementedError('Coming soon...')
-
-    def merge(self, file_path: str, segments: List[Segment] = None):
-        raise NotImplementedError('Coming soon...')
-
 
 if __name__ == '__main__':
-    intel = IntelHex(
-        file_path=r'sample_files\sample_hex_file.hex'
-    )
-    _segments = intel.parse()
+    intel = IntelHex()
+    _segments = intel.parse(file_path=r'sample_files\sample_hex_file.hex')
     print(_segments)
 
-    intel = IntelHex(
+    intel = IntelHex()
+    intel.compose(
         file_path=r'sample_files\del_sample_hex_file.hex',
         segments=_segments
     )
-    intel.compose()
 
-    intel = IntelHex(
-        file_path=r'sample_files\sample_hex_file_2.hex'
-    )
-    _segments = intel.parse()
+    intel = IntelHex()
+    _segments = intel.parse(file_path=r'sample_files\sample_hex_file_2.hex')
     print(_segments)
+    intel.compose(file_path=r'sample_files\del_sample_hex_file_2.hex')
 
-    intel = IntelHex(
-        file_path=r'sample_files\del_sample_hex_file_2.hex',
-        segments=_segments
-    )
-    intel.compose()
-
-    intel = IntelHex(
-        file_path=r'sample_files\sample_empty_hex_file.hex'
-    )
-    _segments = intel.parse()
+    intel = IntelHex()
+    _segments = intel.parse(file_path=r'sample_files\sample_empty_hex_file.hex')
     print(_segments)
-
-    intel = IntelHex(
-        file_path=r'sample_files\del_sample_empty_hex_file.hex',
-        segments=_segments
-    )
-    intel.compose()
+    intel.compose(file_path=r'sample_files\del_sample_empty_hex_file.hex')

@@ -273,8 +273,8 @@ class SmartCard(Format):
         self.lines.append(f'.reset{self.line_termination}')
         self.lines.append(f'.end{self.line_termination}')
 
-    def parse(self) -> List[Segment]:
-        with open(self.file_path) as hex_file:
+    def parse(self, file_path: str) -> List[Segment]:
+        with open(file_path) as hex_file:
             self.lines = hex_file.read().split(self.line_termination)
 
         # read and parse records
@@ -320,7 +320,7 @@ class SmartCard(Format):
 
         return self.segments
 
-    def compose(self) -> List[str]:
+    def compose(self, file_path: str = '', segments: List[Segment] = None) -> List[str]:
         # append pre-script content
         self._append_pre_script()
 
@@ -332,17 +332,11 @@ class SmartCard(Format):
         self._append_post_script()
 
         # write lines if file path is given
-        if self.file_path:
-            with open(self.file_path, 'w') as file:
+        if file_path:
+            with open(file_path, 'w') as file:
                 file.writelines(self.lines)
 
         return self.lines
-
-    def verify(self) -> bool:
-        raise NotImplementedError('Coming soon...')
-
-    def merge(self, file_path: str, segments: List[Segment] = None):
-        raise NotImplementedError('Coming soon...')
 
 
 if __name__ == '__main__':
